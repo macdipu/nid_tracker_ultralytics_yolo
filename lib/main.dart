@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
-  void _openSidePicker(BuildContext context, {required bool boxesOnly}) {
+  void _openSidePicker(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -49,9 +49,15 @@ class HomePage extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => NidCaptureYoloViewPage(
-                      title: boxesOnly ? 'Front' : 'Front',
+                      title: 'Front',
                       modelAssetPath: 'assets/front_nid_model.tflite',
                       labelsAssetPath: 'assets/front_nid_labels.txt',
+                      requiredLabels: [
+                        'name',
+                        'date_of_birth',
+                        'nid_number',
+                        'nid_front_image',
+                      ],
                     ),
                   ),
                 );
@@ -65,7 +71,7 @@ class HomePage extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => NidCaptureYoloViewPage(
-                      title: boxesOnly ? 'Back - Boxes Only' : 'Back - Capture',
+                      title:'Back',
                       modelAssetPath: 'assets/back_nid_model.tflite',
                       labelsAssetPath: 'assets/back_nid_labels.txt',
                     ),
@@ -130,7 +136,7 @@ class HomePage extends StatelessWidget {
               SizedBox(
                 width: 280,
                 child: FilledButton.tonal(
-                  onPressed: () => _openSidePicker(context, boxesOnly: false),
+                  onPressed: () => _openSidePicker(context),
                   child: const Text('Use Camera'),
                 ),
               ),
