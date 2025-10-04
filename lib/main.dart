@@ -1,7 +1,5 @@
 import 'dart:math' as math;
 import 'dart:io';
-import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,7 +8,6 @@ import 'package:ultralytics_yolo/yolo_result.dart';
 import 'package:ultralytics_yolo/yolo_task.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
 import 'package:ultralytics_yolo/yolo_streaming_config.dart';
-import 'package:image/image.dart' as img;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,10 +49,9 @@ class HomePage extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => NidCaptureYoloViewPage(
-                      title: boxesOnly ? 'Front - Boxes Only' : 'Front - Capture',
+                      title: boxesOnly ? 'Front' : 'Front',
                       modelAssetPath: 'assets/front_nid_model.tflite',
                       labelsAssetPath: 'assets/front_nid_labels.txt',
-                      showBoxesOnly: boxesOnly,
                     ),
                   ),
                 );
@@ -72,7 +68,6 @@ class HomePage extends StatelessWidget {
                       title: boxesOnly ? 'Back - Boxes Only' : 'Back - Capture',
                       modelAssetPath: 'assets/back_nid_model.tflite',
                       labelsAssetPath: 'assets/back_nid_labels.txt',
-                      showBoxesOnly: boxesOnly,
                     ),
                   ),
                 );
@@ -139,15 +134,6 @@ class HomePage extends StatelessWidget {
                   child: const Text('Use Camera'),
                 ),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: 280,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.view_compact_alt),
-                  onPressed: () => _openSidePicker(context, boxesOnly: true),
-                  label: const Text('Show Bounding Box'),
-                ),
-              ),
             ],
           ),
         ),
@@ -182,7 +168,6 @@ class _NidLiveDetectPageState extends State<NidLiveDetectPage> {
 
   // Labels loaded from assets/labels.txt
   List<String> _labels = const [];
-  bool _labelsLoaded = false;
   double? _fps;
   int _lastEventMs = 0;
 
@@ -227,7 +212,6 @@ class _NidLiveDetectPageState extends State<NidLiveDetectPage> {
       if (mounted) {
         setState(() {
           _labels = lines;
-          _labelsLoaded = true;
           // Recompute latest detections mapped by label using current _results
           _latestByLabel = {
             for (final r in _results)
@@ -243,8 +227,10 @@ class _NidLiveDetectPageState extends State<NidLiveDetectPage> {
   String _displayName(YOLOResult r) {
     final name = r.className.trim();
     final looksNumeric = RegExp(r'^\d+$').hasMatch(name);
-    if (_labelsLoaded && (name.isEmpty || looksNumeric) && r.classIndex >= 0 && r.classIndex < _labels.length) {
-      return _labels[r.classIndex];
+    if (name.isEmpty || looksNumeric) {
+      if (r.classIndex >= 0 && r.classIndex < _labels.length) {
+        return _labels[r.classIndex];
+      }
     }
     return name.isEmpty && r.classIndex >= 0 && r.classIndex < _labels.length
         ? _labels[r.classIndex]
@@ -317,15 +303,6 @@ class _NidLiveDetectPageState extends State<NidLiveDetectPage> {
                   setState(() { _fps = m.fps; _lastEventMs = DateTime.now().millisecondsSinceEpoch; });
                 },
                 onZoomChanged: (z) => setState(() => _zoom = z),
-              ),
-              // Our overlay for custom styling/colors and summary chips
-              CustomPaint(
-                painter: _ResultsPainter(
-                  results: _results,
-                  screenSize: screenSize,
-                  nameFor: _displayName,
-                  colorForLabel: _colorForLabel,
-                ),
               ),
               // Status banner (FPS / No detections yet)
               Positioned(
@@ -412,61 +389,6 @@ class _NidLiveDetectPageState extends State<NidLiveDetectPage> {
   }
 }
 
-class _ResultsPainter extends CustomPainter {
-  final List<YOLOResult> results;
-  final Size screenSize;
-  final String Function(YOLOResult) nameFor;
-  final Color Function(String) colorForLabel;
-
-  _ResultsPainter({
-    required this.results,
-    required this.screenSize,
-    required this.nameFor,
-    required this.colorForLabel,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-
-    for (final r in results) {
-      final className = nameFor(r);
-      final color = colorForLabel(className);
-      paint.color = color;
-
-      final nb = r.normalizedBox;
-      final rect = Rect.fromLTWH(
-        nb.left * size.width,
-        nb.top * size.height,
-        nb.width * size.width,
-        nb.height * size.height,
-      );
-
-      canvas.drawRect(rect, paint);
-
-      final label = '$className ${(r.confidence * 100).toStringAsFixed(0)}%';
-      textPainter.text = TextSpan(
-        text: label,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
-      );
-      textPainter.layout();
-      final tp = Offset(rect.left, math.max(0, rect.top - textPainter.height - 2));
-      final bgRect = Rect.fromLTWH(tp.dx - 2, tp.dy - 2, textPainter.width + 4, textPainter.height + 4);
-      final bgPaint = Paint()..color = Colors.black.withValues(alpha: 0.55);
-      canvas.drawRRect(RRect.fromRectAndRadius(bgRect, const Radius.circular(4)), bgPaint);
-      textPainter.paint(canvas, tp);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ResultsPainter oldDelegate) {
-    return oldDelegate.results != results || oldDelegate.screenSize != screenSize || oldDelegate.nameFor != nameFor || oldDelegate.colorForLabel != colorForLabel;
-  }
-}
-
 class _FieldChip extends StatelessWidget {
   final String label;
   final String value;
@@ -526,18 +448,17 @@ class _StatusBanner extends StatelessWidget {
   }
 }
 
-// New: Capture Page for camera usage and capture logic
 class NidCaptureYoloViewPage extends StatefulWidget {
   final String title;
   final String modelAssetPath;
   final String labelsAssetPath;
-  final bool showBoxesOnly;
+  final List<String> requiredLabels;
   const NidCaptureYoloViewPage({
     super.key,
     required this.title,
     required this.modelAssetPath,
     required this.labelsAssetPath,
-    this.showBoxesOnly = false,
+    this.requiredLabels = const [],
   });
 
   @override
@@ -546,16 +467,13 @@ class NidCaptureYoloViewPage extends StatefulWidget {
 
 class _NidCaptureYoloViewPageState extends State<NidCaptureYoloViewPage> {
   final _controller = YOLOViewController();
-  final _boundaryKey = GlobalKey();
-
-  String? _modelFilePath;
-  List<String> _labels = const [];
-  bool _labelsLoaded = false;
-
   List<YOLOResult> _results = const [];
-  Map<String, YOLOResult> _latestByLabel = {};
-  double? _fps;
-  bool _saving = false;
+  List<String> _labels = const [];
+  String? _modelFilePath;
+  bool _showBoundingBox = true;
+  Set<String> _detectedLabels = {};
+  bool _isCapturing = false;
+  Uint8List? _capturedImageBytes;
 
   @override
   void initState() {
@@ -563,7 +481,7 @@ class _NidCaptureYoloViewPageState extends State<NidCaptureYoloViewPage> {
     _prepareModelPath();
     _loadLabels();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _controller.setThresholds(confidenceThreshold: 0.70, iouThreshold: 0.50, numItemsThreshold: 100);
+      _controller.setThresholds(confidenceThreshold: 0.60, iouThreshold: 0.50, numItemsThreshold: 100);
     });
   }
 
@@ -571,7 +489,9 @@ class _NidCaptureYoloViewPageState extends State<NidCaptureYoloViewPage> {
     try {
       final dir = await getApplicationSupportDirectory();
       final modelsDir = Directory('${dir.path}/models');
-      if (!await modelsDir.exists()) await modelsDir.create(recursive: true);
+      if (!await modelsDir.exists()) {
+        await modelsDir.create(recursive: true);
+      }
       final baseName = widget.modelAssetPath.split('/').last;
       final outFile = File('${modelsDir.path}/$baseName');
       final data = await rootBundle.load(widget.modelAssetPath);
@@ -581,7 +501,9 @@ class _NidCaptureYoloViewPageState extends State<NidCaptureYoloViewPage> {
       if (mounted) setState(() => _modelFilePath = outFile.path);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Model copy failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Model copy failed: $e')),
+      );
     }
   }
 
@@ -589,265 +511,159 @@ class _NidCaptureYoloViewPageState extends State<NidCaptureYoloViewPage> {
     try {
       final txt = await rootBundle.loadString(widget.labelsAssetPath);
       final lines = txt.split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty).toList();
-      if (mounted) setState(() { _labels = lines; _labelsLoaded = true; });
+      if (mounted) {
+        setState(() {
+          _labels = lines;
+        });
+      }
     } catch (_) {}
   }
 
-  String _displayName(YOLOResult r) {
-    final name = r.className.trim();
-    final looksNumeric = RegExp(r'^\d+$').hasMatch(name);
-    if (_labelsLoaded && (name.isEmpty || looksNumeric) && r.classIndex >= 0 && r.classIndex < _labels.length) {
-      return _labels[r.classIndex];
+  void _onResult(List<YOLOResult> results) {
+    final detected = <String>{};
+    for (final r in results) {
+      final name = r.className.trim();
+      if (_labels.contains(name)) detected.add(name);
+      else if (r.classIndex >= 0 && r.classIndex < _labels.length) detected.add(_labels[r.classIndex]);
     }
-    return name.isEmpty && r.classIndex >= 0 && r.classIndex < _labels.length
-        ? _labels[r.classIndex]
-        : (name.isEmpty ? 'class_${r.classIndex}' : name);
+    setState(() {
+      _results = List<YOLOResult>.from(results);
+      _detectedLabels = detected;
+    });
   }
 
-  bool get _allLabelsPresent => _labels.isNotEmpty && _labels.every((l) => _latestByLabel.containsKey(l));
+  bool get _canCapture {
+    if (widget.requiredLabels.isEmpty) return true;
+    return widget.requiredLabels.every((label) => _detectedLabels.contains(label));
+  }
+
+  Future<void> _captureImage() async {
+    if (_isCapturing) return;
+    setState(() { _isCapturing = true; });
+    try {
+      final frame = await _controller.captureFrame();
+      if (mounted && frame != null) {
+        setState(() { _capturedImageBytes = frame; });
+        _showCapturedImageBottomSheet(frame);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Capture failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() { _isCapturing = false; });
+    }
+  }
+
+  void _showCapturedImageBottomSheet(Uint8List bytes) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Captured Image', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Image.memory(bytes, fit: BoxFit.contain),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final ready = _modelFilePath != null;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title), actions: [
-        if (!widget.showBoxesOnly)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Center(
-              child: Text(
-                _allLabelsPresent ? 'Ready' : 'Align card…',
-                style: TextStyle(color: _allLabelsPresent ? Colors.green : Colors.orange),
-              ),
-            ),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          IconButton(
+            tooltip: 'Switch camera',
+            icon: const Icon(Icons.cameraswitch),
+            onPressed: () => _controller.switchCamera(),
           ),
-      ]),
+        ],
+      ),
       body: !ready
           ? const Center(child: Text('Preparing model…'))
-          : LayoutBuilder(builder: (context, constraints) {
-        final screenSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            RepaintBoundary(
-              key: _boundaryKey,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  YOLOView(
-                    modelPath: _modelFilePath!,
-                    task: YOLOTask.detect,
-                    controller: _controller,
-                    showNativeUI: false,
-                    useGpu: true,
-                    confidenceThreshold: 0.60,
-                    iouThreshold: 0.50,
-                    streamingConfig: const YOLOStreamingConfig.minimal(),
-                    onResult: (List<YOLOResult> results) {
-                      final listCopy = List<YOLOResult>.from(results);
-                      setState(() {
-                        _results = listCopy;
-                        _latestByLabel = {
-                          for (final r in listCopy)
-                            if (_labels.contains(_displayName(r))) _displayName(r): r,
-                        };
-                      });
-                    },
-                    onStreamingData: (stream) {
-                      try {
-                        final dets = (stream['detections'] as List?) ?? const [];
-                        final parsed = dets.whereType<Map>().map((m) => YOLOResult.fromMap(m)).toList();
-                        setState(() {
-                          _fps = (stream['fps'] is num) ? (stream['fps'] as num).toDouble() : _fps;
-                          _results = parsed;
-                          _latestByLabel = {
-                            for (final r in parsed)
-                              if (_labels.contains(_displayName(r))) _displayName(r): r,
-                          };
-                        });
-                      } catch (_) {}
-                    },
-                  ),
-                  CustomPaint(
-                    painter: _BoxesOnlyPainter(
-                      results: _results,
-                      screenSize: screenSize,
-                      nameFor: _displayName,
-                      drawLabels: !widget.showBoxesOnly,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (!widget.showBoxesOnly)
-              Positioned(
-                bottom: 20,
-                left: 16,
-                right: 16,
-                child: SafeArea(
-                  top: false,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: (_allLabelsPresent && !_saving) ? _captureAndSave : null,
-                          child: _saving ? const Text('Saving…') : const Text('Capture'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          _fps != null ? 'FPS ${_fps!.toStringAsFixed(1)}' : '—',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        );
-      }),
-    );
-  }
-
-  Future<void> _captureAndSave() async {
-    try {
-      setState(() => _saving = true);
-      final boundary = _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) throw Exception('No boundary');
-      final dpr = MediaQuery.of(context).devicePixelRatio;
-      final ui.Image image = await boundary.toImage(pixelRatio: dpr);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) throw Exception('No image bytes');
-      Uint8List bytes = byteData.buffer.asUint8List();
-
-      final cardLabel = _labels.firstWhere(
-            (l) => l.toLowerCase().contains('_image') || l.toLowerCase().contains('card'),
-        orElse: () => '',
-      );
-      if (cardLabel.isNotEmpty && _latestByLabel[cardLabel] != null) {
-        final r = _latestByLabel[cardLabel]!;
-        final nb = r.normalizedBox;
-        final decoded = img.decodeImage(bytes);
-        if (decoded != null) {
-          final iw = decoded.width;
-          final ih = decoded.height;
-          final x = (nb.left * iw).clamp(0, iw - 1).toInt();
-          final y = (nb.top * ih).clamp(0, ih - 1).toInt();
-          final w = (nb.width * iw).clamp(1, iw - x).toInt();
-          final h = (nb.height * ih).clamp(1, ih - y).toInt();
-          final cropped = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
-          bytes = Uint8List.fromList(img.encodePng(cropped));
-        }
-      }
-
-      final side = widget.labelsAssetPath.contains('back') ? 'back' : 'front';
-      await _showPreviewAndMaybeSave(bytes: bytes, filePrefix: 'nid_$side');
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Capture failed: $e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _showPreviewAndMaybeSave({required Uint8List bytes, required String filePrefix}) async {
-    if (!mounted) return;
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.black87,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          : Stack(
+        fit: StackFit.expand,
+        children: [
+          YOLOView(
+            modelPath: _modelFilePath!,
+            task: YOLOTask.detect,
+            controller: _controller,
+            showNativeUI: false,
+            useGpu: true,
+            confidenceThreshold: 0.60,
+            iouThreshold: 0.50,
+            streamingConfig: const YOLOStreamingConfig.minimal(),
+            onResult: _onResult,
+          ),
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: Row(
               children: [
-                const Text('Preview', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(bytes, fit: BoxFit.contain),
+                Switch(
+                  value: _showBoundingBox,
+                  onChanged: (v) => setState(() => _showBoundingBox = v),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Save'),
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                const Text('Show Bounding Box', style: TextStyle(color: Colors.white)),
+                const Spacer(),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('Capture Image'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _canCapture ? Colors.teal : Colors.grey,
+                  ),
+                  onPressed: _canCapture && !_isCapturing ? _captureImage : null,
                 ),
               ],
             ),
           ),
-        );
-      },
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              color: Colors.black.withOpacity(0.45),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Required Labels:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final label in widget.requiredLabels)
+                        Chip(
+                          label: Text(label, style: const TextStyle(color: Colors.white)),
+                          backgroundColor: _detectedLabels.contains(label) ? Colors.green : Colors.red,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
-
-    if (saved == true) {
-      final dir = await getTemporaryDirectory();
-      final out = File('${dir.path}/${filePrefix}_${DateTime.now().millisecondsSinceEpoch}.png');
-      await out.writeAsBytes(bytes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: ${out.path}')));
-    }
   }
 }
-
-class _BoxesOnlyPainter extends CustomPainter {
-  final List<YOLOResult> results;
-  final Size screenSize;
-  final String Function(YOLOResult) nameFor;
-  final bool drawLabels;
-  _BoxesOnlyPainter({required this.results, required this.screenSize, required this.nameFor, this.drawLabels = true});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = Colors.tealAccent;
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-
-    for (final r in results) {
-      final nb = r.normalizedBox;
-      final rect = Rect.fromLTWH(nb.left * size.width, nb.top * size.height, nb.width * size.width, nb.height * size.height);
-      canvas.drawRect(rect, paint);
-      if (drawLabels) {
-        final label = '${nameFor(r)} ${(r.confidence * 100).toStringAsFixed(0)}%';
-        textPainter.text = TextSpan(text: label, style: const TextStyle(color: Colors.white, fontSize: 12));
-        textPainter.layout();
-        final tp = Offset(rect.left, math.max(0, rect.top - textPainter.height - 2));
-        final bgRect = Rect.fromLTWH(tp.dx - 2, tp.dy - 2, textPainter.width + 4, textPainter.height + 4);
-        final bgPaint = Paint()..color = Colors.black.withValues(alpha: 0.55);
-        canvas.drawRRect(RRect.fromRectAndRadius(bgRect, const Radius.circular(4)), bgPaint);
-        textPainter.paint(canvas, tp);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _BoxesOnlyPainter oldDelegate) =>
-      oldDelegate.results != results || oldDelegate.drawLabels != drawLabels || oldDelegate.screenSize != screenSize;
-}
-
-
